@@ -48,25 +48,28 @@ def create_ngrams(data, n, splitter, tokenizer):
 
             # TODO: tokenize the words in the sentence
             # name the list of tokens as 'tokens'
-            raise NotImplementedError
+            tokens = tokenizer.tokenize(sentence)
             # Your code ends here
 
             # drop short sentences
             if len(tokens) < 7:
-                break
+                continue
 
             # Iterate over all n-grams to count their occurrences
-            for idx, _ in enumerate(tokens):
-                if idx + n >= len(tokens):
-                    # have already traversed all of the n-grams in this sentence
-                    break
+            for idx in range(len(tokens) - n + 1):
                 # TODO: count the occurrence of the n-gram, where
                 # - 'ngrams' is a Counter with tuple of n-grams as keys and its occurrence count as values
                 # - 'ngram_context' is a Counter with tuple of the context (i.e. the (n-1)-grams) as keys
                 #   and its occurrence count as values
                 # - 'next_word_candidates' is a dictionary with tuple of the context
                 #   (i.e. the (n-1)-grams) as keys and a set of possible next words as values
-                raise NotImplementedError
+                ngram = tuple(tokens[idx:idx + n])
+                context = ngram[:-1]
+                next_word = ngram[-1]
+
+                ngrams[ngram] += 1
+                ngram_context[context] += 1
+                next_word_candidates[context].add(next_word)
                 # Your code ends here
 
     # Sort all the next word candidates
@@ -86,7 +89,7 @@ def create_ngrams(data, n, splitter, tokenizer):
         for nw in next_words:
             # TODO: compute the estimated probability of the next word given the context
             # hint: use the counters 'ngrams' and 'ngram_context' you have created above
-            raise NotImplementedError
+            scores.append(ngrams[context + (nw,)] / ngram_context[context])
             # Your code ends here
 
         # record the most probable next word as the prediction
@@ -119,7 +122,30 @@ def plot_next_word_prob(word_scores, word_candidates, context, top=10, save_path
     # - for a given context, elements in word_scores[context] and word_candidates[context] have one-to-one correspondence
     # - context is a tuple of words
 
-    raise NotImplementedError
+    if context not in word_scores or context not in word_candidates:
+        raise KeyError(f"Context {context!r} was not observed in the training data")
+
+    scores = np.asarray(word_scores[context])
+    candidates = word_candidates[context]
+    top_indices = sorted(
+        range(len(candidates)),
+        key=lambda idx: (-scores[idx], candidates[idx]),
+    )[:top]
+
+    top_candidates = [candidates[idx] for idx in top_indices]
+    top_scores = [scores[idx] for idx in top_indices]
+
+    plt.clf()
+    plt.bar(top_candidates, top_scores)
+    plt.xlabel("Next token")
+    plt.ylabel("Probability")
+    plt.title(f"Top {min(top, len(top_candidates))} continuations after {' '.join(context)}")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path)
+    else:
+        plt.show()
     # Your code ends here
 
 
