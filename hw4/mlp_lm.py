@@ -45,7 +45,7 @@ def preprocess_data(data, local_window_size, splitter, tokenizer):
 
             # drop short sentences
             if len(tokens) < local_window_size + 1:
-                break
+                continue
 
             for idx, _ in enumerate(token_ids):
 
@@ -56,7 +56,8 @@ def preprocess_data(data, local_window_size, splitter, tokenizer):
                 # TODO: Select a subset of token_ids from idx -> idx + local_window_size as input and put it to x
                 # Select a subset of token_ids from idx -> idx + local_window_size as input and put it to x: list of context token_ids
                 # Then select the word immediately after this window as output and put it to y: the target next token_id
-                raise NotImplementedError
+                x = token_ids[idx:idx + local_window_size]
+                y = token_ids[idx + local_window_size]
                 # your code ends here
 
                 x_data.append(x)
@@ -83,19 +84,20 @@ class NPLMFirstBlock(nn.Module):
 
     def forward(self, inputs):
         # TODO: implement the forward pass
-        raise NotImplementedError
         # looking up the word embeddings from self.embeddings()
         # And concatenating them
         # Note this is done for a batch of instances.
-
+        embeds = self.embeddings(inputs)
+        embeds = embeds.view(-1, self.local_window_size * self.embed_dim)
 
         # Transform embeddings with a linear layer and tanh activation
-
+        hidden = torch.tanh(self.linear(embeds))
 
         # apply layer normalization
-
+        hidden = self.layer_norm(hidden)
 
         # apply dropout
+        final_embeds = self.dropout(hidden)
 
         # your code ends here
 
@@ -113,17 +115,17 @@ class NPLMBlock(nn.Module):
 
     def forward(self, inputs):
         # TODO: implement the forward pass
-        raise NotImplementedError
         # apply linear transformation and tanh activation
-
+        hidden = torch.tanh(self.linear(inputs))
 
         # add residual connection
-
+        hidden = hidden + inputs
 
         # apply layer normalization
-
+        hidden = self.layer_norm(hidden)
 
         # apply dropout
+        final_inputs = self.dropout(hidden)
 
         # your code ends here
 
@@ -138,10 +140,11 @@ class NPLMFinalBlock(nn.Module):
 
     def forward(self, inputs):
         # TODO: implement the forward pass
-        raise NotImplementedError
         # apply linear transformation
+        logits = self.linear(inputs)
 
         # apply log_softmax to get log-probabilities (logits)
+        log_probs = F.log_softmax(logits, dim=-1)
 
         # your code ends here
 
@@ -158,7 +161,8 @@ class NPLM(nn.Module):
 
         # TODO: create num_blocks of NPLMBlock as intermediate layers
         # append them to self.intermediate_layers
-        raise NotImplementedError
+        for _ in range(num_blocks):
+            self.intermediate_layers.append(NPLMBlock(hidden_dim, dropout_p))
 
         # your code ends here
 
@@ -166,13 +170,16 @@ class NPLM(nn.Module):
 
     def forward(self, inputs):
         # TODO: implement the forward pass
-        raise NotImplementedError
         # input layer
+        hidden = self.first_layer(inputs)
 
         # multiple middle layers
         # remember to apply the ReLU activation function after each layer
+        for layer in self.intermediate_layers:
+            hidden = F.relu(layer(hidden))
 
         # output layer
+        log_probs = self.final_layer(hidden)
 
         # your code ends here
 
@@ -204,11 +211,15 @@ def train(model, train_dataloader, dev_dataloader, criterion, optimizer, schedul
     all_epoch_dev_losses = []
     all_epoch_dev_ppls = []
     for epoch in range(num_epochs):
+        model.train()
         train_losses = []
         train_ppls = []
         print(f"{'-' * 10} Epoch {epoch}: Training {'-' * 10}")
         for idx, batch in tqdm(enumerate(train_dataloader)):
             inp, target = batch
+
+            # clear gradients accumulated by the previous batch
+            optimizer.zero_grad()
 
             # get log probabilities over next words
             log_probs = model(inp)
@@ -219,7 +230,7 @@ def train(model, train_dataloader, dev_dataloader, criterion, optimizer, schedul
             # TODO extract perplexity
             # remember the connection between perplexity and cross-entropy loss
             # name the perplexity result as 'ppl'
-            raise NotImplementedError
+            ppl = torch.exp(loss.detach())
             # your code ends here
 
             # backward pass and update gradient
@@ -268,7 +279,7 @@ def evaluate(model, eval_dataloader, criterion):
     avg_loss = loss / count
     # TODO: compute perplexity
     # name the perplexity result as 'avg_ppl'
-    raise NotImplementedError
+    avg_ppl = np.exp(avg_loss)
     # your code ends here
     return avg_loss, avg_ppl
 
@@ -292,10 +303,10 @@ def generate_text(prompt, model, tokenizer, local_window_size, top_p, max_len=30
                 None, output
             )
             probs = F.softmax(output, dim=-1)
-            pred = torch.multinomial(probs, num_samples=1).squeeze(1)
+            pred = torch.multinomial(probs, num_samples=1).item()
         else:
             # greedy decoding
-            pred = torch.argmax(output).item()
+            pred = torch.argmax(output, dim=-1).item()
 
         tokenized_prompt_ids.append(pred)
         count += 1
@@ -379,7 +390,7 @@ def sample_from_mlp_lm(config, dev_data):
 
     print(f"{'-' * 10} Sample From the Model {'-' * 10}")
     # greedy decoding
-    print(" {'-' * 10} greedy {'-' * 10}")
+    print(f"{'-' * 10} greedy {'-' * 10}")
     generate_text(prompt, model, tokenizer, config.local_window_size, top_p=None)
 
     # sampling with p=0.0; note this is equivalent to the greedy search

@@ -63,3 +63,4 @@ if __name__ == '__main__':
     # uncomment the following line to run
     # sample_from_trained_mlp_lm(dev_data)
 
+    pass
