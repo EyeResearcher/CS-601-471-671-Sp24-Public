@@ -188,6 +188,9 @@ class NPLM(nn.Module):
 
 def test_model_forward(model, sample, local_window_size, tokenizer):
     inp, target = sample
+    device = next(model.parameters()).device
+    inp = inp.to(device)
+    target = target.to(device)
 
     log_probs = model(inp)
 
@@ -205,6 +208,7 @@ def test_model_forward(model, sample, local_window_size, tokenizer):
 
 def train(model, train_dataloader, dev_dataloader, criterion, optimizer, scheduler, num_epochs, save_path,
           print_every=100):
+    device = next(model.parameters()).device
     best_ppl = np.inf
     all_epoch_train_losses = []
     all_epoch_train_ppls = []
@@ -217,6 +221,8 @@ def train(model, train_dataloader, dev_dataloader, criterion, optimizer, schedul
         print(f"{'-' * 10} Epoch {epoch}: Training {'-' * 10}")
         for idx, batch in tqdm(enumerate(train_dataloader)):
             inp, target = batch
+            inp = inp.to(device)
+            target = target.to(device)
 
             # clear gradients accumulated by the previous batch
             optimizer.zero_grad()
@@ -266,6 +272,7 @@ def train(model, train_dataloader, dev_dataloader, criterion, optimizer, schedul
 
 def evaluate(model, eval_dataloader, criterion):
     model.eval()
+    device = next(model.parameters()).device
 
     loss = 0.
     count = 0
@@ -273,6 +280,8 @@ def evaluate(model, eval_dataloader, criterion):
     with torch.no_grad():  # turn off gradient calculation because we want to evaluate the model
         for idx, batch in tqdm(enumerate(eval_dataloader)):
             inp, target = batch
+            inp = inp.to(device)
+            target = target.to(device)
             log_probs = model(inp)
             loss += criterion(log_probs, target).item()
             count += 1
@@ -292,7 +301,8 @@ def generate_text(prompt, model, tokenizer, local_window_size, top_p, max_len=30
     count = 0
     while count < max_len:
         # select the tokens in the window
-        new_input = torch.tensor(tokenized_prompt_ids[-local_window_size:])
+        device = next(model.parameters()).device
+        new_input = torch.tensor(tokenized_prompt_ids[-local_window_size:], device=device)
 
         # compute model output
         output = model(new_input)
@@ -349,6 +359,9 @@ def run_mlp_lm(config, train_data, dev_data):
     print(f"{'-' * 10} Create Model {'-' * 10}")
     model = NPLM(tokenizer.vocab_size, config.embed_dim, config.local_window_size, config.hidden_dim, config.num_blocks,
                  config.dropout_p)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+    print(f"{'-' * 10} Device: {device} {'-' * 10}")
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     print(f"{'-' * 10} # of parameters: {params} {'-' * 10}")
@@ -372,10 +385,11 @@ def run_mlp_lm(config, train_data, dev_data):
 
 def sample_from_mlp_lm(config, dev_data):
     tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = NPLM(tokenizer.vocab_size, config.embed_dim, config.local_window_size, config.hidden_dim, config.num_blocks,
-                 config.dropout_p)
+                 config.dropout_p).to(device)
     print(f"{'-' * 10} Load Model Weights {'-' * 10}")
-    model.load_state_dict(torch.load(config.save_path, map_location=torch.device('cpu')))
+    model.load_state_dict(torch.load(config.save_path, map_location=device))
     model.eval()
 
     print(f"{'-' * 10} Evaluate on the Dev Set {'-' * 10}")

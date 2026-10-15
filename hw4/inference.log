@@ -1,0 +1,54 @@
+---------- Load Dataset ----------
+Using the latest cached version of the dataset since wikitext couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'wikitext-103-raw-v1' at C:\Users\mzinn1\.cache\huggingface\datasets\wikitext\wikitext-103-raw-v1\0.0.0\b08601e04326c79dfdd32d625aee71d232d685c3 (last modified on Thu Oct 15 16:11:06 2026).
+Using the latest cached version of the dataset since wikitext couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'wikitext-103-raw-v1' at C:\Users\mzinn1\.cache\huggingface\datasets\wikitext\wikitext-103-raw-v1\0.0.0\b08601e04326c79dfdd32d625aee71d232d685c3 (last modified on Thu Oct 15 16:11:06 2026).
+---------- an example from the train set ----------
+ The game 's battle system , the BliTZ system , is carried over directly from Valkyira Chronicles . During missions , players select each unit using a top @-@ down perspective of the battlefield map : once a character is selected , the player moves the character around the battlefield in third @-@ person . A character can only act once per @-@ turn , but characters can be granted multiple turns at the expense of other characters ' turns . Each character has a field and distance of movement limited by their Action Gauge . Up to nine characters can be assigned to a single mission . During gameplay , characters will call out if something happens to them , such as their health points ( HP ) getting low or being knocked out by enemy attacks . Each character has specific " Potentials " , skills unique to each character . They are divided into " Personal Potential " , which are innate skills that remain unaltered unless otherwise dictated by the story and can either help or impede a character , and " Battle Potentials " , which are grown throughout the game and always grant boons to a character . To learn Battle Potentials , each character has a unique " Masters Table " , a grid @-@ based skill table that can be used to acquire and link different skills . Characters also have Special Abilities that grant them temporary boosts on the battlefield : Kurt can activate " Direct Command " and move around the battlefield without depleting his Action Point gauge , the character Reila can shift into her " Valkyria Form " and become invincible , while Imca can target multiple enemy units with her heavy weapon . 
+
+C:\Users\mzinn1\AppData\Local\anaconda3\envs\nplm\lib\site-packages\transformers\tokenization_utils_base.py:1601: FutureWarning: `clean_up_tokenization_spaces` was not set. It will be set to `True` by default. This behavior will be depracted in transformers v4.45, and will be then set to `False` by default. For more details check this issue: https://github.com/huggingface/transformers/issues/31884
+  warnings.warn(
+---------- Load Model Weights ----------
+---------- Evaluate on the Dev Set ----------
+
+  0%|          | 0/3760 [00:00<?, ?it/s]
+  6%|5         | 224/3760 [00:00<00:01, 2198.76it/s]
+ 15%|#4        | 557/3760 [00:00<00:01, 2845.51it/s]
+ 22%|##2       | 842/3760 [00:00<00:01, 2670.55it/s]
+ 30%|###       | 1129/3760 [00:00<00:00, 2736.92it/s]
+ 37%|###7      | 1404/3760 [00:00<00:01, 2205.02it/s]
+ 44%|####3     | 1639/3760 [00:00<00:00, 2231.56it/s]
+ 50%|####9     | 1872/3760 [00:00<00:00, 2143.12it/s]
+ 56%|#####5    | 2093/3760 [00:00<00:00, 2148.79it/s]
+ 62%|######1   | 2330/3760 [00:01<00:00, 2154.55it/s]
+ 68%|######7   | 2549/3760 [00:01<00:00, 2131.75it/s]
+ 74%|#######4  | 2794/3760 [00:01<00:00, 2218.46it/s]
+ 80%|########  | 3018/3760 [00:01<00:00, 1869.87it/s]
+ 87%|########6 | 3268/3760 [00:01<00:00, 2027.94it/s]
+ 94%|#########3| 3523/3760 [00:01<00:00, 2166.40it/s]
+100%|#########9| 3748/3760 [00:01<00:00, 2172.62it/s]
+100%|##########| 3760/3760 [00:01<00:00, 2215.60it/s]
+
+0it [00:00, ?it/s]
+2it [00:00, 17.17it/s]
+6it [00:00, 25.29it/s]
+11it [00:00, 32.33it/s]
+15it [00:00, 31.04it/s]
+19it [00:00, 30.19it/s]
+24it [00:00, 34.28it/s]
+28it [00:00, 32.34it/s]
+33it [00:01, 32.01it/s]
+38it [00:01, 35.02it/s]
+42it [00:01, 33.41it/s]
+46it [00:01, 32.16it/s]
+48it [00:01, 32.43it/s]
+Dev Perplexity: 1869.9805708717938; Dev Loss: 7.533683319886525
+---------- Sample From the Model ----------
+---------- greedy ----------
+Generated text: The best perks of living on the east.... the the, the the., the the, the the, the the, the the, the the, the the, the
+---------- sampling with p=0.0 ----------
+Generated text: The best perks of living on the east.... the the, the the., the the, the the, the the, the the, the the, the the, the
+---------- sampling with p=0.3 ----------
+Generated text: The best perks of living on the east when where 4, him on and in again,, ofe by,n that was the we. elements, the the the the. The s
+---------- sampling with p=1.0 ----------
+Generated text: The best perks of living on the east States were concretenishr partner Alllingsively tournamentsulo Cup. mind although soon during Tibet AR squadronrez 3 thegon portray Canada within composing mangaatt
