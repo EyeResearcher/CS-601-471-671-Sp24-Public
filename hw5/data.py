@@ -1,4 +1,5 @@
 import torch
+from array import array
 from datasets import load_dataset
 from gpt.bpe import BPETokenizer
 from tqdm import tqdm
@@ -51,15 +52,32 @@ class WikiTextDataset(Dataset):
         return torch.LongTensor(self.data[idx])
 
 
+class CompactWikiTextDataset(Dataset):
+    """Keep tokenized examples in compact arrays instead of millions of tensors."""
+
+    def __init__(self, raw_data, block_size):
+        self.tokens = array('H')
+        self.offsets = array('I', [0])
+        self.block_size = block_size
+        for example in tqdm(raw_data, desc='Tokenize and chunk'):
+            ids = bpe_tokenizer.encoder.encode(example['text'])
+            for start in range(0, len(ids), block_size):
+                chunk = ids[start:start + block_size]
+                if len(chunk) <= 1:
+                    continue
+                self.tokens.extend(chunk)
+                self.offsets.append(len(self.tokens))
+
+    def __len__(self):
+        return len(self.offsets) - 1
+
+    def __getitem__(self, idx):
+        return torch.tensor(self.tokens[self.offsets[idx]:self.offsets[idx + 1]], dtype=torch.long)
+
+
 def create_datasets(train_data, dev_data, block_size):
-    train_tokenized = tokenize_data(train_data, bpe_tokenizer)
-    dev_tokenized = tokenize_data(dev_data, bpe_tokenizer)
-
-    train_preprocessed = prepare_data(train_tokenized, block_size)
-    dev_preprocessed = prepare_data(dev_tokenized, block_size)
-
-    train_dataset = WikiTextDataset(train_preprocessed, block_size)
-    dev_dataset = WikiTextDataset(dev_preprocessed, block_size)
+    train_dataset = CompactWikiTextDataset(train_data, block_size)
+    dev_dataset = CompactWikiTextDataset(dev_data, block_size)
 
     return train_dataset, dev_dataset
 

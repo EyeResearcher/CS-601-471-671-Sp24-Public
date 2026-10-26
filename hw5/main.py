@@ -1,3 +1,4 @@
+import argparse
 from data import load_data, create_datasets, create_dataloader, VOCAB_SIZE
 import torch
 from gpt.model import GPT
@@ -23,8 +24,8 @@ def evaluation_callback(trainer):
 
 
 def sample_from_trained_model(trained_model):
-    trained_model.load_state_dict(torch.load('model.pth'))
-    trained_model.to('cuda')
+    device = next(trained_model.parameters()).device
+    trained_model.load_state_dict(torch.load('model.pth', map_location=device))
     trained_model.eval()
 
     generate(trained_model, prompt=' The best perks of living on the east', num_samples=1, steps=30)
@@ -33,10 +34,10 @@ def sample_from_trained_model(trained_model):
     generate(trained_model, prompt=' According to the latest research', num_samples=1, steps=30)
 
 
-def run(train_dataset, dev_dataset, max_iter=1, device='cpu', plot=True, sample=True):
+def run(train_dataset, dev_dataset, max_iter=1, device='cpu', plot=True, sample=True, batch_size=8):
     # create dataloaders
-    train_dataloader = create_dataloader(train_dataset, batch_size=256, shuffle=True)
-    dev_dataloader = create_dataloader(dev_dataset, batch_size=256, shuffle=False)
+    train_dataloader = create_dataloader(train_dataset, batch_size=batch_size, shuffle=True)
+    dev_dataloader = create_dataloader(dev_dataset, batch_size=batch_size, shuffle=False)
 
     # create model
     model_config = GPT.get_default_config()
@@ -61,27 +62,34 @@ def run(train_dataset, dev_dataset, max_iter=1, device='cpu', plot=True, sample=
     if sample:
         sample_from_trained_model(model)
 
-def cpu_gpu_comparison(train_dataset, dev_dataset, max_iter=100):
-    run(train_dataset, dev_dataset, max_iter=max_iter, device='cpu', plot=False, sample=False)
-    run(train_dataset, dev_dataset, max_iter=max_iter, device='cuda', plot=False, sample=False)
+def cpu_gpu_comparison(train_dataset, dev_dataset, max_iter=50, device='mps', batch_size=8):
+    run(train_dataset, dev_dataset, max_iter=max_iter, device='cpu', plot=False, sample=False, batch_size=batch_size)
+    run(train_dataset, dev_dataset, max_iter=max_iter, device=device, plot=False, sample=False, batch_size=batch_size)
 
 
-def gpu_full_run(train_dataset, dev_dataset, max_iter=20000):
-    run(train_dataset, dev_dataset, max_iter=max_iter, device='cuda', plot=True, sample=True)
+def gpu_full_run(train_dataset, dev_dataset, max_iter=20000, device='mps', batch_size=8):
+    run(train_dataset, dev_dataset, max_iter=max_iter, device=device, plot=True, sample=True, batch_size=batch_size)
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--run-all', action='store_true', help='Run the 50-step comparison and full training')
+    parser.add_argument('--batch-size', type=int, default=8)
+    parser.add_argument('--comparison-steps', type=int, default=50)
+    parser.add_argument('--full-steps', type=int, default=20000)
+    args = parser.parse_args()
+    if not args.run_all:
+        parser.error('Pass --run-all to run the comparison and full training.')
+    accelerator = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+    print('Comparison accelerator:', accelerator, flush=True)
     # load raw data for lm
     train_data, dev_data = load_data()
 
     # create datasets
     train_d, dev_d = create_datasets(train_data, dev_data, block_size=32)
 
-    # TODO: run cpu & gpu comparison
-    # uncomment the following line to run
-    # cpu_gpu_comparison(train_d, dev_d, max_iter=50)
-
-    # TODO: run the full training on gpu
-    # uncomment the following line to run
-    # gpu_full_run(train_d, dev_d, max_iter=20000)
+    cpu_gpu_comparison(train_d, dev_d, max_iter=args.comparison_steps,
+                       device=accelerator, batch_size=args.batch_size)
+    gpu_full_run(train_d, dev_d, max_iter=args.full_steps,
+                 device=accelerator, batch_size=args.batch_size)
 

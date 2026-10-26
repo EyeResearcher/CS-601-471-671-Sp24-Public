@@ -1,0 +1,7 @@
+.conda-env/
+.conda-pkgs/
+.hf-cache/
+.pip-cache/
+.runtime-home/
+__pycache__/
+*.pyc
