@@ -20,19 +20,24 @@ from transformers.models.bert.modeling_bert import BertEmbeddings
 
 class CustomModelforSequenceClassification(nn.Module):
 
-    def __init__(self, model_name, num_labels=2, type="full"):
+    def __init__(self, model_name, num_labels=2, type="full", prefix_length=128):
         super(CustomModelforSequenceClassification, self).__init__()
         self.model = AutoModel.from_pretrained(model_name)
         self.type = type
         self.num_labels = num_labels
-        self.prefix = torch.nn.Parameter(torch.randn(prefix_length, self.model.config.hidden_size, requires_grad=True).to('cuda'))
+        self.prefix = torch.nn.Parameter(torch.randn(prefix_length, self.model.config.hidden_size) * 0.02)
+        self.prefix.requires_grad_(type == "prefix")
         self.classifier = nn.Linear(self.model.config.hidden_size, num_labels)
+        if type in ("head", "prefix"):
+            self.model.requires_grad_(False)
 
     def forward(self, input_ids, attention_mask):
         
-        if self.type == "full":
-            # TODO: implement the forward function for the full model
-            raise NotImplementedError("You need to implement the forward function for the full model")
+        if self.type in ("full", "head"):
+            output = self.model(input_ids=input_ids, attention_mask=attention_mask)
+            hidden = output.last_hidden_state
+            pooled = (hidden * attention_mask.unsqueeze(-1)).sum(dim=1) / attention_mask.sum(dim=1, keepdim=True).clamp(min=1)
+            logits = self.classifier(pooled)
 
             # pass the input_ids and attention_mask into the model to get the output object (you can name it `output`)
 
@@ -44,17 +49,17 @@ class CustomModelforSequenceClassification(nn.Module):
 
             # your code ends here
 
-        elif self.type == "head":
-            # TODO: implement the forward function for the head-tuned model
-            raise NotImplementedError("You need to implement the forward function for the head-tuned model")
-            # Hint: it should be the same as the full model
-
-            # your code ends here
-        
         elif self.type == 'prefix':
-
-            # TODO: implement the forward function for the prefix-tuned model
-            raise NotImplementedError("You need to implement the forward function for the prefix-tuned model")
+            batch_size = input_ids.size(0)
+            token_embeddings = self.model.get_input_embeddings()(input_ids)
+            prefix = self.prefix.unsqueeze(0).expand(batch_size, -1, -1)
+            inputs_embeds = torch.cat((prefix, token_embeddings), dim=1)
+            prefix_mask = attention_mask.new_ones((batch_size, self.prefix.size(0)))
+            attention_mask = torch.cat((prefix_mask, attention_mask), dim=1)
+            output = self.model(inputs_embeds=inputs_embeds, attention_mask=attention_mask)
+            hidden = output.last_hidden_state
+            pooled = (hidden * attention_mask.unsqueeze(-1)).sum(dim=1) / attention_mask.sum(dim=1, keepdim=True).clamp(min=1)
+            logits = self.classifier(pooled)
 
             # the prefix is at self.prefix, but this is only one prefix, we want to append it to each instance in a batch
             # we make multiple copies of self.prefix here. the number of copies = batch size
@@ -92,6 +97,8 @@ class CustomModelforSequenceClassification(nn.Module):
 
             # your code ends here
 
+        else:
+            raise ValueError(f"Unknown tuning type: {self.type}")
         return {"logits": logits}
     
 def print_gpu_memory():
@@ -174,9 +181,8 @@ def evaluate_model(model, dataloader, device):
     model.eval()
 
     # iterate over the dataloader
-    for batch in dataloader:
-        # TODO: implement the evaluation function
-        raise NotImplementedError("You need to implement the evaluation function")
+    with torch.no_grad():
+      for batch in dataloader:
         # get the input_ids, attention_mask from the batch and put them on the device
         # Hints:
         # - see the getitem function in the BoolQADataset class for how to access the input_ids and attention_mask
@@ -189,9 +195,11 @@ def evaluate_model(model, dataloader, device):
 
         # your code ends here
 
-        predictions = output['logits']
-        predictions = torch.argmax(predictions, dim=1)
-        dev_accuracy.add_batch(predictions=predictions, references=batch['labels'])
+        input_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+        output = model(input_ids=input_ids, attention_mask=attention_mask)
+        predictions = torch.argmax(output['logits'], dim=1)
+        dev_accuracy.add_batch(predictions=predictions.cpu(), references=batch['labels'])
 
     # compute and return metrics
     return dev_accuracy.compute()
@@ -212,20 +220,20 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
 
     # here, we use the AdamW optimizer. Use torch.optim.AdamW
     print(" >>>>>>>>  Initializing optimizer")
+    finetune_type = getattr(mymodel, "type", "auto")
     
     weight_decay = 0.01
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in mymodel.named_parameters() if not any(nd in n for nd in no_decay)],'weight_decay': weight_decay},
-        {'params': [p for n, p in mymodel.named_parameters() if any(nd in n for nd in no_decay)],'weight_decay': 0.0}
+        {'params': [p for n, p in mymodel.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)],'weight_decay': weight_decay},
+        {'params': [p for n, p in mymodel.named_parameters() if p.requires_grad and any(nd in n for nd in no_decay)],'weight_decay': 0.0}
     ]
     optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=lr)
 
     # need to customize optimizer for prefix-tuning and head tuning
 
-    if mymodel.type == "head":
-        # TODO: implement the optimizer for head-tuned model
-        raise NotImplementedError("You need to implement the optimizer for head-tuned model")
+    if finetune_type == "head":
+        custom_optimizer = torch.optim.AdamW(mymodel.classifier.parameters(), lr=lr)
         # you need to get the parameters of the classifier (head), you can do this by calling mymodel.head.parameters()
 
         # then you need to pass these parameters to the optimizer
@@ -234,9 +242,9 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
 
         # your code ends here
     
-    elif mymodel.type == "prefix":
-        # TODO: implement the optimizer for prefix-tuned model
-        raise NotImplementedError("You need to implement the optimizer for prefix-tuned model")
+    elif finetune_type == "prefix":
+        prefix_params = mymodel.prefix
+        classifier_params = mymodel.classifier.parameters()
         # you need to get the parameters of the prefix, you can do this by calling mymodel.prefix
         # name the parameters as `prefix_params`
 
@@ -251,7 +259,7 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
     # now, we set up the learning rate scheduler
     lr_scheduler = get_scheduler(
         "linear",
-        optimizer=optimizer,
+        optimizer=custom_optimizer if finetune_type in ("head", "prefix") else optimizer,
         num_warmup_steps=50,
         num_training_steps=len(train_dataloader) * num_epochs
     )
@@ -291,8 +299,13 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
             Then, compute the accuracy using the logits and the labels.
             """
 
-            # TODO: implement the training loop
-            raise NotImplementedError("You need to implement this function")
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+            output = mymodel(input_ids=input_ids, attention_mask=attention_mask)
+            predictions = output['logits'] if isinstance(output, dict) else output.logits
+            batch_loss = loss(predictions, labels)
+            batch_loss.backward()
 
             # get the input_ids, attention_mask, and labels from the batch and put them on the device
             # Hints: similar to the evaluate_model function
@@ -314,7 +327,7 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
             # your code ends here
 
             # update the model parameters depending on the model type
-            if mymodel.type == "full" or mymodel.type == "auto":
+            if finetune_type in ("full", "auto"):
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
@@ -326,7 +339,7 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
             predictions = torch.argmax(predictions, dim=1)
             
             # update metrics
-            train_accuracy.add_batch(predictions=predictions, references=batch['labels'])
+            train_accuracy.add_batch(predictions=predictions.cpu(), references=batch['labels'])
 
         # print evaluation metrics
         print(f" ===> Epoch {epoch + 1}")
@@ -347,7 +360,7 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
         epoch_end_time = time.time()
         print(f"Epoch {epoch + 1} took {epoch_end_time - epoch_start_time} seconds")
 
-    plot(train_acc_list, dev_acc_list, name=model_name, finetune_method=mymodel.type)
+    plot(train_acc_list, dev_acc_list, name=model_name, finetune_method=finetune_type)
 
 def plot(train_list, valid_list, name, finetune_method):
     
@@ -361,7 +374,7 @@ def plot(train_list, valid_list, name, finetune_method):
     plt.savefig(f'{name}_{finetune_method}.png')
 
 
-def pre_process(model_name, batch_size, device, small_subset, type='auto'):
+def pre_process(model_name, batch_size, device, small_subset, type='auto', prefix_length=128):
     # download dataset
     print("Loading the dataset ...")
     dataset = load_dataset("boolq")
@@ -426,7 +439,7 @@ def pre_process(model_name, batch_size, device, small_subset, type='auto'):
     if type == "auto":
         pretrained_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
     else:
-        pretrained_model = CustomModelforSequenceClassification(model_name, num_labels=2, type=type)
+        pretrained_model = CustomModelforSequenceClassification(model_name, num_labels=2, type=type, prefix_length=prefix_length)
 
 
     print("Moving model to device ..." + str(device))
@@ -442,21 +455,22 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--model", type=str, default="bert-base-uncased")
+    parser.add_argument("--model", type=str, default="roberta-base")
     parser.add_argument("--type", type=str, default="auto", choices=["auto", "full", "head", "prefix"], help="type of tuning to perform on the model")
     parser.add_argument("--prefix_length", type=int, default=128)
     args = parser.parse_args()
     print(f"Specified arguments: {args}")
 
     assert type(args.small_subset) == bool, "small_subset must be a boolean"
-    global prefix_length
-    prefix_length = args.prefix_length
     #load the data and models
     pretrained_model, train_dataloader, validation_dataloader, test_dataloader = pre_process(args.model,
                                                                                              args.batch_size,
                                                                                              args.device,
                                                                                              args.small_subset,
-                                                                                             args.type)
+                                                                                             args.type,
+                                                                                             args.prefix_length)
+    if args.type != 'auto':
+        print(f"Trainable parameters: {sum(p.numel() for p in pretrained_model.parameters() if p.requires_grad):,}")
     print(" >>>>>>>>  Starting training ... ")
     train(pretrained_model, args.num_epochs, train_dataloader, validation_dataloader, test_dataloader, args.device, args.lr, args.model)
     

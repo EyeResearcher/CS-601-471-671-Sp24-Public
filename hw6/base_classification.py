@@ -91,9 +91,8 @@ def evaluate_model(model, dataloader, device):
     model.eval()
 
     # iterate over the dataloader
-    for batch in dataloader:
-        # TODO: implement the evaluation function
-        raise NotImplementedError("You need to implement the evaluation function")
+    with torch.no_grad():
+      for batch in dataloader:
         # get the input_ids, attention_mask from the batch and put them on the device
         # Hints:
         # - see the getitem function in the BoolQADataset class for how to access the input_ids and attention_mask
@@ -105,9 +104,11 @@ def evaluate_model(model, dataloader, device):
 
         # your code ends here
 
-        predictions = output.logits
-        predictions = torch.argmax(predictions, dim=1)
-        dev_accuracy.add_batch(predictions=predictions, references=batch['labels'])
+        input_ids = batch['input_ids'].to(device)
+        attention_mask = batch['attention_mask'].to(device)
+        output = model(input_ids=input_ids, attention_mask=attention_mask)
+        predictions = torch.argmax(output.logits, dim=1)
+        dev_accuracy.add_batch(predictions=predictions.cpu(), references=batch['labels'])
 
     # compute and return metrics
     return dev_accuracy.compute()
@@ -169,8 +170,16 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
             Then, call optimizer.zero_grad() to reset the gradients for the next iteration.
             """
 
-            # TODO: implement the training loop
-            raise NotImplementedError("You need to implement this function")
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+            output = mymodel(input_ids=input_ids, attention_mask=attention_mask)
+            predictions = output.logits
+            batch_loss = loss(predictions, labels)
+            batch_loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
 
             # get the input_ids, attention_mask, and labels from the batch and put them on the device
             # Hints: similar to the evaluate_model function
@@ -197,7 +206,7 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
             predictions = torch.argmax(predictions, dim=1)
 
             # update metrics
-            train_accuracy.add_batch(predictions=predictions, references=batch['labels'])
+            train_accuracy.add_batch(predictions=predictions.cpu(), references=batch['labels'])
             
         # print evaluation metrics
         print(f" ===> Epoch {epoch + 1}")
