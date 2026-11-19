@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from datasets import load_dataset
 from tqdm import tqdm
 import evaluate as evaluate
-from transformers import get_scheduler
+from transformers import get_scheduler, set_seed
 from transformers import AutoModelForSequenceClassification
 import argparse
 import subprocess
@@ -52,20 +52,17 @@ class BoolQADataset(torch.utils.data.Dataset):
         question = self.questions[index]
         answer = self.answers[index]
 
-        # this is input encoding for your model. Note, question comes first since we are doing question answering
-        # and we don't wnt it to be truncated if the passage is too long
-        input_encoding = question + " [SEP] " + passage
-
-        # encode_plus will encode the input and return a dictionary of tensors
+        # Keep the question intact and truncate only the passage.
         encoded_review = self.tokenizer.encode_plus(
-            input_encoding,
+            question,
+            text_pair=passage,
             add_special_tokens=True,
             max_length=self.max_len,
             return_token_type_ids=False,
             return_attention_mask=True,
             return_tensors="pt",
             padding="max_length",
-            truncation=True
+            truncation="only_second"
         )
 
         return {
@@ -135,7 +132,7 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
     lr_scheduler = get_scheduler(
         "linear",
         optimizer=optimizer,
-        num_warmup_steps=50,
+        num_warmup_steps=min(50, len(train_dataloader) * num_epochs // 10),
         num_training_steps=len(train_dataloader) * num_epochs
     )
 
@@ -233,11 +230,11 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
     save_path = "overfit.png" if small_subset else "base_full.png"
     plt.savefig(save_path)
 
-def pre_process(model_name, batch_size, device, small_subset):
+def pre_process(model_name, batch_size, device, small_subset, seed=42):
     # download dataset
     print("Loading the dataset ...")
     dataset = load_dataset("boolq")
-    dataset = dataset.shuffle()  # shuffle the data
+    dataset = dataset.shuffle(seed=seed)
 
     print("Slicing the data...")
     if small_subset:
@@ -311,17 +308,20 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--model", type=str, default="distilbert-base-uncased")
+    parser.add_argument("--seed", type=int, default=42)
 
     args = parser.parse_args()
     print(f"Specified arguments: {args}")
 
     assert type(args.small_subset) == bool, "small_subset must be a boolean"
+    set_seed(args.seed)
 
     # load the data and models
     pretrained_model, train_dataloader, validation_dataloader, test_dataloader = pre_process(args.model,
                                                                                              args.batch_size,
                                                                                              args.device,
-                                                                                             args.small_subset)
+                                                                                             args.small_subset,
+                                                                                             args.seed)
     print(" >>>>>>>>  Starting training ... ")
     train(pretrained_model, args.num_epochs, train_dataloader, validation_dataloader, test_dataloader, args.device, args.lr, args.small_subset)
     

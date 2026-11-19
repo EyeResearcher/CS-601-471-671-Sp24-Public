@@ -24,5 +24,21 @@ pip install -r requirements.txt
 ### Run the code
 You can create your own sbatch scripts to run the code.
 
+Both classification scripts use `--seed 42` by default, so the 8,000-example
+training split and held-out test split are reproducible across runs. For example:
+
+```
+python base_classification.py --small_subset --device cpu --batch_size 10 --lr 1e-4 --num_epochs 20
+python classification.py --type prefix --device cuda --num_epochs 5
+python classification_lora.py --device cuda --rank 8 --alpha 16
+python openai_gpt-boolq.py
+```
+
+The LoRA script targets the query and value projections in BERT/RoBERTa-style
+models and reports the number of trainable parameters. The OpenAI script requires
+`OPENAI_API_KEY` and incurs API charges. Training runs download the BoolQ data
+and model weights and may require a GPU; the assignment's plots and reported
+accuracies must be obtained from actual runs.
+
 ### Submission
 Please follow the instructions in the homework pdf.

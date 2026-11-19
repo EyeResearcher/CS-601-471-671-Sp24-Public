@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import load_dataset
 import evaluate as evaluate
-from transformers import get_scheduler
+from transformers import get_scheduler, set_seed
 from transformers import AutoModel, AutoModelForSequenceClassification
 import argparse
 import subprocess
@@ -142,20 +142,17 @@ class BoolQADataset(torch.utils.data.Dataset):
         question = self.questions[index]
         answer = self.answers[index]
 
-        # this is input encoding for your model. Note, question comes first since we are doing question answering
-        # and we don't wnt it to be truncated if the passage is too long
-        input_encoding = question + " [SEP] " + passage
-
-        # encode_plus will encode the input and return a dictionary of tensors
+        # Keep the question intact and truncate only the passage.
         encoded_review = self.tokenizer.encode_plus(
-            input_encoding,
+            question,
+            text_pair=passage,
             add_special_tokens=True,
             max_length=self.max_len,
             return_token_type_ids=False,
             return_attention_mask=True,
             return_tensors="pt",
             padding="max_length",
-            truncation=True
+            truncation="only_second"
         )
         
         return {
@@ -205,7 +202,7 @@ def evaluate_model(model, dataloader, device):
     return dev_accuracy.compute()
 
 
-def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dataloder, device, lr, model_name):
+def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dataloader, device, lr, model_name):
     """ Train a PyTorch Module
 
     :param torch.nn.Module mymodel: the model to be trained
@@ -260,7 +257,7 @@ def train(mymodel, num_epochs, train_dataloader, validation_dataloader, test_dat
     lr_scheduler = get_scheduler(
         "linear",
         optimizer=custom_optimizer if finetune_type in ("head", "prefix") else optimizer,
-        num_warmup_steps=50,
+        num_warmup_steps=min(50, len(train_dataloader) * num_epochs // 10),
         num_training_steps=len(train_dataloader) * num_epochs
     )
 
@@ -371,14 +368,16 @@ def plot(train_list, valid_list, name, finetune_method):
     plt.ylabel('Accuracy')
     plt.title('Train vs Validation Accuracy')
     plt.legend()
-    plt.savefig(f'{name}_{finetune_method}.png')
+    filename = name.replace("/", "_").replace("\\", "_")
+    plt.savefig(f'{filename}_{finetune_method}.png')
+    plt.close()
 
 
-def pre_process(model_name, batch_size, device, small_subset, type='auto', prefix_length=128):
+def pre_process(model_name, batch_size, device, small_subset, type='auto', prefix_length=128, seed=42):
     # download dataset
     print("Loading the dataset ...")
     dataset = load_dataset("boolq")
-    dataset = dataset.shuffle()  # shuffle the data
+    dataset = dataset.shuffle(seed=seed)
 
     print("Slicing the data...")
     if small_subset:
@@ -458,17 +457,20 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="roberta-base")
     parser.add_argument("--type", type=str, default="auto", choices=["auto", "full", "head", "prefix"], help="type of tuning to perform on the model")
     parser.add_argument("--prefix_length", type=int, default=128)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     print(f"Specified arguments: {args}")
 
     assert type(args.small_subset) == bool, "small_subset must be a boolean"
+    set_seed(args.seed)
     #load the data and models
     pretrained_model, train_dataloader, validation_dataloader, test_dataloader = pre_process(args.model,
                                                                                              args.batch_size,
                                                                                              args.device,
                                                                                              args.small_subset,
                                                                                              args.type,
-                                                                                             args.prefix_length)
+                                                                                             args.prefix_length,
+                                                                                             args.seed)
     if args.type != 'auto':
         print(f"Trainable parameters: {sum(p.numel() for p in pretrained_model.parameters() if p.requires_grad):,}")
     print(" >>>>>>>>  Starting training ... ")
